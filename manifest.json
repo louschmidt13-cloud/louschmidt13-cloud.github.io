@@ -2,7 +2,7 @@
   "name": "KI-Meisterplan",
   "short_name": "KI-Plan",
   "description": "Dein persönlicher KI-Lernplan – von 0 zum KI-Berater",
-  "start_url": "/",
+  "start_url": "/Kiplan/",
   "display": "standalone",
   "background_color": "#0A0A0F",
   "theme_color": "#0A0A0F",
