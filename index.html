@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <title>KI-Meisterplan</title>
+
+  <!-- iOS PWA -->
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+  <meta name="apple-mobile-web-app-title" content="KI-Plan"/>
+  <meta name="theme-color" content="#0A0A0F"/>
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json"/>
+
+  <!-- Apple Touch Icon (inline SVG → PNG via canvas) – set at runtime -->
+  <link rel="apple-touch-icon" href="icon-192.png"/>
+
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent;}
+    :root{
+      --bg:#0A0A0F; --surface:#111118; --border:#1A1A2E;
+      --text:#E8E8F0; --muted:#666; --cyan:#00D4FF;
+      --purple:#A855F7; --orange:#FF6B35; --green:#22C55E;
+      --safe-top:env(safe-area-inset-top,0px);
+      --safe-bottom:env(safe-area-inset-bottom,0px);
+    }
+    html,body{height:100%;background:var(--bg);color:var(--text);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      overscroll-behavior:none;}
+
+    /* ── LAYOUT ── */
+    #app{display:flex;flex-direction:column;height:100%;height:100dvh;}
+    #header{
+      background:linear-gradient(135deg,#0A0A0F,#1A1025 60%,#0F1A2E);
+      border-bottom:1px solid var(--border);
+      padding:calc(var(--safe-top) + 14px) 16px 14px;
+      flex-shrink:0;
+    }
+    #scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(var(--safe-bottom) + 80px);}
+    #bottom-nav{
+      position:fixed;bottom:0;left:0;right:0;
+      background:rgba(10,10,15,0.95);
+      backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+      border-top:1px solid var(--border);
+      padding:8px 0 calc(var(--safe-bottom) + 4px);
+      display:flex;z-index:100;
+    }
+    .nav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;
+      padding:6px 0;background:none;border:none;color:var(--muted);cursor:pointer;
+      font-size:10px;letter-spacing:.5px;}
+    .nav-btn .nav-icon{font-size:20px;}
+    .nav-btn.active{color:var(--cyan);}
+
+    /* ── HEADER ── */
+    #header h1{
+      font-size:22px;font-weight:300;
+      background:linear-gradient(135deg,#fff 0%,#A855F7 50%,#00D4FF 100%);
+      -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+      margin-bottom:4px;
+    }
+    #header .sub{color:var(--muted);font-size:11px;}
+    .progress-bar-wrap{margin-top:10px;background:#111;border-radius:3px;height:3px;}
+    .progress-bar-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,var(--cyan),var(--purple));transition:width .5s;}
+    .progress-label{display:flex;justify-content:space-between;margin-top:4px;}
+    .progress-label span{font-size:10px;color:var(--muted);}
+    #progress-pct{color:var(--cyan);}
+
+    /* ── PHASE PILLS ── */
+    .phase-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;}
+    .phase-pill{background:var(--surface);border:1px solid var(--border);border-radius:10px;
+      padding:12px 10px;cursor:pointer;text-align:left;color:var(--text);width:100%;}
+    .phase-pill.active{background:linear-gradient(135deg,var(--pill-accent),#111);}
+    .phase-pill .pill-icon{font-size:18px;margin-bottom:4px;}
+    .phase-pill .pill-title{font-size:12px;font-weight:600;color:var(--muted);}
+    .phase-pill.active .pill-title{color:var(--pill-color);}
+    .phase-pill .pill-sub{font-size:10px;color:#333;margin-top:2px;}
+
+    /* ── GOAL BANNER ── */
+    .goal-banner{border-radius:8px;padding:10px 14px;margin-bottom:14px;border-left-width:3px;border-left-style:solid;border:1px solid;border-left-width:3px;}
+    .goal-banner .goal-label{font-size:9px;letter-spacing:3px;margin-bottom:3px;}
+    .goal-banner .goal-text{font-size:12px;color:#bbb;line-height:1.5;}
+
+    /* ── WEEK TABS ── */
+    .week-tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;overflow-x:auto;
+      -webkit-overflow-scrolling:touch;padding-bottom:2px;}
+    .week-tab{background:var(--surface);border:1px solid var(--border);border-radius:6px;
+      padding:6px 12px;cursor:pointer;font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0;}
+    .week-tab.active{font-weight:700;}
+    .week-theme{font-size:14px;font-weight:400;color:#ccc;margin-bottom:14px;line-height:1.4;}
+
+    /* ── TASKS ── */
+    .task-list{display:flex;flex-direction:column;gap:8px;}
+    .task-card{border-radius:10px;overflow:hidden;border:1px solid var(--border);
+      background:rgba(255,255,255,0.015);transition:border-color .2s;}
+    .task-card.open{background:rgba(0,50,80,.15);}
+    .task-card.done{background:rgba(0,255,0,0.01);}
+
+    .task-row{display:flex;align-items:center;gap:10px;padding:12px 12px;}
+    .check-btn{width:30px;height:30px;border-radius:7px;border:1px solid #2A2A3E;
+      background:rgba(255,255,255,0.04);display:flex;align-items:center;justify-content:center;
+      font-size:12px;font-weight:700;color:#444;cursor:pointer;flex-shrink:0;transition:all .2s;}
+    .check-btn.checked{font-weight:700;color:#000;}
+    .task-info{flex:1;min-width:0;}
+    .task-text{font-size:13px;line-height:1.4;color:#ddd;margin-bottom:5px;}
+    .task-card.done .task-text{text-decoration:line-through;color:#555;}
+    .task-badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+    .badge{font-size:10px;padding:2px 7px;border-radius:4px;white-space:nowrap;}
+    .badge-time{color:var(--muted);}
+    .badge-type{border:1px solid;}
+    .badge-lang{border-radius:4px;padding:2px 6px;font-size:10px;}
+    .open-btn{flex-shrink:0;padding:7px 12px;border-radius:7px;cursor:pointer;
+      font-size:12px;font-weight:700;border:1px solid;transition:all .2s;white-space:nowrap;}
+
+    /* ── RESOURCE PANEL ── */
+    .res-panel{border-top:1px solid rgba(0,212,255,0.2);}
+    .res-bar{padding:8px 12px;background:rgba(0,0,0,0.3);display:flex;
+      align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;}
+    .res-name{font-size:11px;color:#888;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .res-open{font-size:11px;padding:5px 11px;border-radius:5px;text-decoration:none;
+      font-weight:700;flex-shrink:0;display:inline-block;}
+    .res-tip{padding:10px 12px 0;font-size:11px;color:#666;font-style:italic;line-height:1.6;}
+    .yt-wrap{padding:12px;position:relative;padding-bottom:calc(56.25% + 24px);}
+    .yt-wrap iframe{position:absolute;top:12px;left:12px;right:12px;width:calc(100% - 24px);height:calc(56.25% - 12px);}
+    .web-wrap{padding:12px;}
+    .fake-browser{border-radius:8px;overflow:hidden;border:1px solid rgba(0,212,255,0.3);}
+    .browser-bar{display:flex;align-items:center;gap:6px;padding:6px 10px;background:#141420;}
+    .browser-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+    .browser-url{flex:1;background:#0A0A0F;border-radius:4px;padding:3px 8px;
+      font-size:10px;color:#333;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .web-frame{width:100%;height:380px;border:none;display:block;background:#fff;}
+
+    /* ── INFO TAB ── */
+    .info-section{border-radius:10px;padding:14px 16px;margin-bottom:12px;
+      border:1px solid;border-left-width:3px;border-left-style:solid;}
+    .info-title{font-size:13px;font-weight:600;margin-bottom:10px;}
+    .info-item{display:flex;gap:8px;margin-bottom:7px;}
+    .info-arrow{flex-shrink:0;font-size:13px;}
+    .info-text{font-size:12px;color:#999;line-height:1.5;}
+
+    /* ── EMPTY STATE ── */
+    .empty{text-align:center;padding:40px 20px;color:var(--muted);}
+    .empty .e-icon{font-size:48px;margin-bottom:12px;}
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>KI-Meisterplan</h1>
+    <div class="sub">Von 0 → KI-Berater · 🇩🇪 Deutsch · 18 Wochen</div>
+    <div class="progress-bar-wrap"><div class="progress-bar-fill" id="prog-fill" style="width:0%"></div></div>
+    <div class="progress-label">
+      <span id="prog-tasks">0/0 Aufgaben</span>
+      <span id="progress-pct">0%</span>
+    </div>
+  </div>
+  <div id="scroll"></div>
+  <nav id="bottom-nav">
+    <button class="nav-btn active" data-tab="plan" onclick="switchTab('plan')">
+      <span class="nav-icon">📅</span>Lernplan
+    </button>
+    <button class="nav-btn" data-tab="info" onclick="switchTab('info')">
+      <span class="nav-icon">ℹ️</span>Anleitung
+    </button>
+  </nav>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// DATA
+// ─────────────────────────────────────────────
+const phases = [
+  {
+    id:1, title:"Fundament", sub:"Wochen 1–4", icon:"🧱",
+    color:"#00D4FF", accent:"rgba(0,61,77,0.6)",
+    goal:"Verstehen, was KI ist, wie sie funktioniert und welche Tools existieren",
+    weeks:[
+      { week:"Woche 1", theme:"Was ist KI? – Grundbegriffe auf Deutsch", tasks:[
+        { day:"Mo", time:"45 min", lang:"de",
+          task:"KI vs. Machine Learning vs. Deep Learning – Unterschiede verstehen",
+          res:"Florian Dalwigk – KI einfach erklärt (YouTube)",
+          type:"youtube", id:"Ip1a2JHdt3E",
+          url:"https://www.youtube.com/watch?v=Ip1a2JHdt3E",
+          tip:"Florian Dalwigk ist einer der bekanntesten deutschen IT-YouTuber. In 8 Minuten erklärt er KI, ML und Deep Learning messerscharf – perfekt zum Einstieg." },
+        { day:"Di", time:"30 min", lang:"de",
+          task:"Geschichte der KI: Von Alan Turing bis ChatGPT",
+          res:"IBM Deutschland – KI Grundlagen (Artikel)",
+          type:"article", url:"https://www.ibm.com/de-de/think/topics/artificial-intelligence",
+          tip:"IBMs fundierter Einstiegsartikel auf Deutsch erklärt Geschichte, Grundtypen und Anwendungsbereiche der KI. Ideal zum Querlesen und Notizen machen." },
+        { day:"Mi", time:"60 min", lang:"de",
+          task:"Wie funktionieren LLMs? (GPT, Claude, Gemini)",
+          res:"TH Köln – KI, ML & Deep Learning erklärt (Artikel)",
+          type:"article", url:"https://www.th-koeln.de/hochschule/kurz-erklaert-ueber-ki-maschinelles-lernen-und-deep-learning_95656.php",
+          tip:"Exzellenter Wissenschaftsartikel der TH Köln – erklärt LLMs und Deep Learning auf hohem Niveau aber verständlich." },
+        { day:"Do", time:"30 min", lang:"de",
+          task:"KI-Typen: Narrow AI vs. General AI vs. AGI",
+          res:"Datasolut – KI Typen erklärt (Artikel)",
+          type:"article", url:"https://datasolut.com/machine-learning-vs-deep-learning/",
+          tip:"Klarer Vergleichsartikel eines deutschen KI-Unternehmens – alle KI-Typen mit Praxisbeispielen erklärt." },
+        { day:"Fr", time:"45 min", lang:"de",
+          task:"Wochenrückblick: Eigenes Glossar mit 20 Begriffen anlegen",
+          res:"Notion – Kostenloses Wissens-Tool",
+          type:"tool", url:"https://notion.so",
+          tip:"Erstelle eine Notion-Datenbank mit deinen 20 wichtigsten KI-Begriffen. Spalten: Begriff | Definition | Beispiel | Quelle." }
+      ]},
+      { week:"Woche 2", theme:"Die wichtigsten KI-Tools kennenlernen", tasks:[
+        { day:"Mo", time:"60 min", lang:"de",
+          task:"ChatGPT (GPT-4o) ausprobieren – Prompt-Basics",
+          res:"ChatGPT – OpenAI", type:"tool", url:"https://chat.openai.com",
+          tip:"Teste auf Deutsch: Schreibe einen Business-Plan in 5 Sätzen, erkläre KI wie einem 10-Jährigen." },
+        { day:"Di", time:"45 min", lang:"de",
+          task:"Claude von Anthropic testen – stark bei langen Texten",
+          res:"Claude – Anthropic", type:"tool", url:"https://claude.ai",
+          tip:"Claude versteht komplexe Aufgaben auf Deutsch sehr gut. Vergleiche direkt mit ChatGPT." },
+        { day:"Mi", time:"45 min", lang:"de",
+          task:"Google Gemini ausprobieren – Stärken & Schwächen",
+          res:"Google Gemini", type:"tool", url:"https://gemini.google.com",
+          tip:"Gemini ist mit Google-Suche verknüpft und hat aktuelle Infos. Teste mit Recherche-Fragen." },
+        { day:"Do", time:"30 min", lang:"de",
+          task:"Perplexity AI – KI als Suchmaschine mit Quellen",
+          res:"Perplexity AI", type:"tool", url:"https://perplexity.ai",
+          tip:"Perplexity zeigt immer woher es die Infos hat – ideal für seriöse Recherchen auf Deutsch." },
+        { day:"Fr", time:"45 min", lang:"de",
+          task:"KI-Tool Vergleich: Wann nehme ich welches Tool?",
+          res:"t3n – KI-Chatbot Vergleich (Artikel)",
+          type:"article", url:"https://t3n.de/news/ki-chatbot-vergleich-chatgpt-claude-gemini-1612945/",
+          tip:"t3n ist Deutschlands führendes Digital-Wirtschaftsmagazin. Ihr KI-Chatbot-Vergleich ist sehr praxisnah." }
+      ]},
+      { week:"Woche 3", theme:"Prompt Engineering – KI richtig steuern", tasks:[
+        { day:"Mo", time:"45 min", lang:"de",
+          task:"Was ist ein Prompt? Grundregeln des Prompting",
+          res:"Learn Prompting – Deutsch verfügbar",
+          type:"website", url:"https://learnprompting.org/de/docs/introduction",
+          tip:"Kostenloser Kurs komplett auf Deutsch! Gehe die Kapitel durch und probiere jeden Prompt in Claude aus." },
+        { day:"Di", time:"60 min", lang:"de",
+          task:"Zero-Shot, Few-Shot & Chain-of-Thought Prompting",
+          res:"Prompt Engineering Guide (Website)",
+          type:"website", url:"https://www.promptingguide.ai/techniques/cot",
+          tip:"Die wichtigsten Prompting-Techniken mit konkreten Beispielen. Probiere jeden Typ direkt aus." },
+        { day:"Mi", time:"60 min", lang:"de",
+          task:"System Prompts & Rollen zuweisen",
+          res:"Anthropic Prompt Library (Deutsch)",
+          type:"website", url:"https://docs.anthropic.com/de/prompt-library/library",
+          tip:"Anthropics offizielle Prompt-Bibliothek auf Deutsch – kopiere Templates und passe sie an." },
+        { day:"Do", time:"45 min", lang:"de",
+          task:"Prompts für Business: E-Mails, Reports, Marketing",
+          res:"Microsoft – Prompt-Tipps Deutsch (Artikel)",
+          type:"article", url:"https://support.microsoft.com/de-de/topic/tipps-zum-erstellen-von-copilot-eingaben-37aea367-2a57-4da6-9eda-28d2c8e3f66e",
+          tip:"Microsoft erklärt Prompt-Techniken auf Deutsch für den Business-Alltag – direkt übertragbar." },
+        { day:"Fr", time:"45 min", lang:"de",
+          task:"Eigene Prompt-Bibliothek mit 10 Templates anlegen",
+          res:"Notion – Prompt-Bibliothek aufbauen",
+          type:"tool", url:"https://notion.so",
+          tip:"Datenbank in Notion: Name | Ziel | Prompt-Text | Beispiel-Output | Bewertung. Als Berater Gold wert." }
+      ]},
+      { week:"Woche 4", theme:"KI für Bilder, Musik & Kreatives", tasks:[
+        { day:"Mo", time:"60 min", lang:"de",
+          task:"Midjourney Grundlagen – Bilder mit KI erstellen",
+          res:"Heise – Midjourney Tutorial Deutsch (Artikel)",
+          type:"article", url:"https://www.heise.de/ratgeber/Midjourney-Tutorial-Tipps-und-Tricks-fuer-bessere-KI-Bilder-9193624.html",
+          tip:"Heise ist die renommierteste deutsche Tech-Publikation. Ihr Midjourney-Tutorial ist umfassend und aktuell." },
+        { day:"Di", time:"45 min", lang:"de",
+          task:"Adobe Firefly – DSGVO-konform & kostenlos",
+          res:"Adobe Firefly", type:"tool", url:"https://firefly.adobe.com",
+          tip:"Kostenlos, DSGVO-konform und auf Deutsch. Perfekt für professionellen Einsatz in Deutschland." },
+        { day:"Mi", time:"30 min", lang:"de",
+          task:"KI-Bildgeneratoren im Überblick",
+          res:"t3n – KI-Bildgeneratoren Vergleich",
+          type:"article", url:"https://t3n.de/news/ki-bildgenerator-vergleich-1549810/",
+          tip:"t3n vergleicht alle KI-Bildgeneratoren auf Deutsch – mit Kosten, Qualität und Rechtlichem." },
+        { day:"Do", time:"30 min", lang:"de",
+          task:"KI-Musik: Suno AI – Songs per Text erstellen",
+          res:"Suno AI", type:"tool", url:"https://suno.com",
+          tip:"In unter 1 Minute professionelle Songs per Texteingabe. Versteht auch Deutsche Beschreibungen." },
+        { day:"Fr", time:"45 min", lang:"de",
+          task:"Monats-Review: KI-Nachrichten auf Deutsch lesen",
+          res:"Heise KI – Deutsches KI-Portal",
+          type:"website", url:"https://www.heise.de/thema/Kuenstliche-Intelligenz",
+          tip:"Heise KI ist das beste deutschsprachige Portal für aktuelle KI-Neuigkeiten. Als Lesezeichen merken!" }
+      ]}
+    ]
+  },
+  {
+    id:2, title:"Vertiefung", sub:"Wochen 5–10", icon:"⚡",
+    color:"#A855F7", accent:"rgba(45,27,78,0.6)",
+    goal:"KI-Tools professionell einsetzen, Automatisierungen bauen, Markt verstehen",
+    weeks:[
+      { week:"Woche 5–6", theme:"KI für Business & Produktivität", tasks:[
+        { day:"T1", time:"60 min", lang:"de",
+          task:"KI im Marketing: Texte, Ads und Social Media automatisieren",
+          res:"OMR – KI im Marketing (Artikel)",
+          type:"article", url:"https://omr.com/de/daily/ki-im-marketing/",
+          tip:"OMR ist die bekannteste deutsche Marketing-Plattform. Zeigt konkrete KI-Anwendungen im Marketing." },
+        { day:"T2", time:"45 min", lang:"de",
+          task:"Microsoft Copilot – KI in Word, Excel & Outlook nutzen",
+          res:"Microsoft Learn – Copilot Deutsch",
+          type:"website", url:"https://learn.microsoft.com/de-de/copilot/microsoft-365/microsoft-365-copilot-overview",
+          tip:"Microsofts offizielle, kostenlose Lernplattform komplett auf Deutsch mit Schritt-für-Schritt-Anleitungen." },
+        { day:"T3", time:"45 min", lang:"de",
+          task:"Notion AI direkt ausprobieren",
+          res:"Notion AI", type:"tool", url:"https://notion.so",
+          tip:"Aktiviere Notion AI und teste: Zusammenfassungen, Meeting-Protokolle, Texte verbessern – auf Deutsch." },
+        { day:"T4", time:"90 min", lang:"de",
+          task:"Make.com – Erste Automatisierung ohne Code bauen",
+          res:"Make.com", type:"tool", url:"https://make.com",
+          tip:"Make.com hat eine deutsche Oberfläche. Starte mit einem kostenlosen Account und baue dein erstes Szenario." },
+        { day:"T5", time:"90 min", lang:"de",
+          task:"Zapier – 6.000+ Apps mit KI verbinden",
+          res:"Zapier", type:"tool", url:"https://zapier.com",
+          tip:"Zapier hat Hilfsmaterial auf Deutsch. Baue deinen ersten Zap: E-Mail → KI-Zusammenfassung → Slack." }
+      ]},
+      { week:"Woche 7–8", theme:"No-Code KI-Entwicklung", tasks:[
+        { day:"T1", time:"90 min", lang:"de",
+          task:"Flowise – Eigene KI-Chatbots ohne Code bauen",
+          res:"FlowiseAI", type:"tool", url:"https://flowiseai.com",
+          tip:"Flowise ist Open Source und kostenlos. Baue deinen ersten Chatbot mit eigenen Daten." },
+        { day:"T2", time:"90 min", lang:"de",
+          task:"RAG – Chatbot mit deinen eigenen Dokumenten",
+          res:"Datasolut – RAG erklärt Deutsch",
+          type:"article", url:"https://datasolut.com/retrieval-augmented-generation/",
+          tip:"RAG ist die Technologie hinter Chatbots die eigene Dokumente kennen – Pflicht für KI-Berater." },
+        { day:"T3", time:"60 min", lang:"de",
+          task:"n8n – 100% DSGVO-konforme Automatisierung",
+          res:"n8n.io – Deutsche Plattform", type:"tool", url:"https://n8n.io",
+          tip:"n8n ist ein deutsches Unternehmen mit vollständiger deutscher Dokumentation. Perfekt für deutsche Kunden." },
+        { day:"T4", time:"60 min", lang:"de",
+          task:"Dify.ai – KI-Agents visuell erstellen",
+          res:"Dify.ai", type:"tool", url:"https://dify.ai",
+          tip:"Dify ist eine der mächtigsten Plattformen für KI-Workflows. Kostenlos und funktioniert auf Deutsch." },
+        { day:"T5", time:"120 min", lang:"de",
+          task:"Portfolio-Stück: FAQ-Chatbot für ein Unternehmen bauen",
+          res:"Voiceflow", type:"tool", url:"https://voiceflow.com",
+          tip:"Baue einen vollständigen Chatbot mit Voiceflow – dein erstes Portfolio-Stück für Kundenpräsentationen." }
+      ]},
+      { week:"Woche 9–10", theme:"KI-Markt & Business-Modelle", tasks:[
+        { day:"T1", time:"45 min", lang:"de",
+          task:"KI-Markt: OpenAI, Anthropic, Google, Meta im Vergleich",
+          res:"Heise – KI-Markt Analysen",
+          type:"website", url:"https://www.heise.de/thema/Kuenstliche-Intelligenz",
+          tip:"Heise liefert fundierte Analysen zum globalen KI-Markt. Recherchiere aktuelle Artikel zu den Leadern." },
+        { day:"T2", time:"60 min", lang:"de",
+          task:"EU AI Act – Pflicht-Wissen für KI-Berater in Deutschland",
+          res:"Bundesregierung – EU AI Act Deutsch",
+          type:"article", url:"https://www.bundesregierung.de/breg-de/schwerpunkte/digitalisierung/kuenstliche-intelligenz/ki-verordnung-der-eu-2222082",
+          tip:"Die offizielle Bundesregierungs-Seite erklärt den EU AI Act. Als Berater unverzichtbar und glaubwürdig." },
+        { day:"T3", time:"45 min", lang:"de",
+          task:"DSGVO & KI: Was du als Berater wissen musst",
+          res:"IT-Recht Kanzlei – DSGVO & KI",
+          type:"article", url:"https://www.it-recht-kanzlei.de/kuenstliche-intelligenz.html",
+          tip:"Deutschlands führende IT-Rechtskanzlei erklärt alle rechtlichen Grundlagen für KI in Deutschland." },
+        { day:"T4", time:"60 min", lang:"de",
+          task:"KI-Geschäftsmodelle: Welches passt zu dir?",
+          res:"OMR – KI-Tools für Freelancer",
+          type:"article", url:"https://omr.com/de/daily/ki-tools-fuer-freelancer/",
+          tip:"OMR analysiert wie KI-Freelancer in Deutschland Geld verdienen – mit Preisen und Nischen." },
+        { day:"T5", time:"30 min", lang:"de",
+          task:"Besten deutschen KI-Newsletter abonnieren",
+          res:"KI-Briefing – Deutscher Newsletter",
+          type:"website", url:"https://www.ki-briefing.de",
+          tip:"Ki-Briefing: täglich 5 Minuten lesen reicht, um immer auf dem neusten Stand zu sein." }
+      ]}
+    ]
+  },
+  {
+    id:3, title:"Profi-Level", sub:"Wochen 11–18", icon:"🚀",
+    color:"#FF6B35", accent:"rgba(77,31,10,0.6)",
+    goal:"KI-Projekte umsetzen, Kunden gewinnen, selbstständig machen",
+    weeks:[
+      { week:"Woche 11–13", theme:"Python-Grundlagen für KI", tasks:[
+        { day:"T1", time:"90 min", lang:"de",
+          task:"Python auf Deutsch lernen – der schnellste Weg",
+          res:"Florian Dalwigk – Python Tutorial Deutsch",
+          type:"youtube", id:"oxXpB9pSETo",
+          url:"https://www.youtube.com/watch?v=oxXpB9pSETo",
+          tip:"Florian Dalwigk erklärt Python klar und praxisnah auf Deutsch. Perfekt für Einsteiger." },
+        { day:"T2", time:"90 min", lang:"de",
+          task:"KI & Neuronale Netze interaktiv auf Deutsch",
+          res:"HerrKI.de – Interaktive Lernplattform",
+          type:"website", url:"https://www.herrki.de",
+          tip:"Herausragende deutsche Lernplattform – 100% kostenlos, keine Anmeldung, direkt im Browser benutzbar." },
+        { day:"T3", time:"90 min", lang:"en",
+          task:"OpenAI API nutzen – eigene KI-Anfragen senden",
+          res:"OpenAI API Quickstart",
+          type:"website", url:"https://platform.openai.com/docs/quickstart",
+          tip:"Der Quickstart ist sehr verständlich. Starte mit dem Playground – du kannst auf Deutsch experimentieren." },
+        { day:"T4", time:"120 min", lang:"en",
+          task:"Streamlit – KI-App mit Interface deployen",
+          res:"Streamlit – App Framework",
+          type:"website", url:"https://streamlit.io",
+          tip:"Streamlit verwandelt Python-Skripte in Web-Apps. Erstelle eine Chatbot-Demo – dein Portfolio-Stück." },
+        { day:"T5", time:"60 min", lang:"de",
+          task:"GitHub: Erstes KI-Projekt veröffentlichen",
+          res:"GitHub", type:"tool", url:"https://github.com",
+          tip:"Dein GitHub-Profil ist dein Lebenslauf. Lade dein erstes Projekt hoch und schreibe eine README auf Deutsch." }
+      ]},
+      { week:"Woche 14–16", theme:"Selbstständigkeit vorbereiten", tasks:[
+        { day:"T1", time:"60 min", lang:"de",
+          task:"Nische definieren: Für welche Branche KI-Berater sein?",
+          res:"Gründerszene – KI & Startups",
+          type:"website", url:"https://www.gruenderszene.de/technologie/kuenstliche-intelligenz",
+          tip:"Gründerszene ist Deutschlands führendes Startup-Medium. Recherchiere welche Nischen am profitabelsten sind." },
+        { day:"T2", time:"45 min", lang:"de",
+          task:"LinkedIn-Profil als KI-Experte aufbauen",
+          res:"LinkedIn", type:"tool", url:"https://linkedin.com",
+          tip:"Headline auf Deutsch: 'KI-Berater | Ich helfe [Nische] dabei, KI gewinnbringend einzusetzen.'" },
+        { day:"T3", time:"120 min", lang:"de",
+          task:"Erstes Beratungs-Deck professionell erstellen",
+          res:"Canva – Präsentationen", type:"tool", url:"https://canva.com",
+          tip:"10 Folien: Problem → KI-Lösung → Dein Angebot → Preise → Case Study. Biete 3 kostenlose Erstgespräche." },
+        { day:"T4", time:"60 min", lang:"de",
+          task:"Preise für KI-Berater in Deutschland finden",
+          res:"GULP – Tagessätze IT-Freelancer",
+          type:"website", url:"https://www.gulp.de/gulp2/g/freiberufler-ratgeber/tagessatz-berechnen",
+          tip:"GULP ist die größte deutsche Freelancer-Plattform. Hier siehst du reale Tagessätze für KI-Berater." },
+        { day:"T5", time:"90 min", lang:"de",
+          task:"Content-Strategie: KI-Tipps auf LinkedIn & YouTube teilen",
+          res:"CapCut – Video-Editor", type:"tool", url:"https://capcut.com",
+          tip:"CapCut + KI = professionelle Short-Videos in Minuten. Content ist dein bester Akquise-Kanal." }
+      ]},
+      { week:"Woche 17–18", theme:"Erste Kunden gewinnen & Launch", tasks:[
+        { day:"T1", time:"90 min", lang:"de",
+          task:"Deutsche Freelancer-Plattformen nutzen",
+          res:"GULP – IT-Freelancer Marktplatz",
+          type:"website", url:"https://www.gulp.de",
+          tip:"GULP ist die größte deutsche IT-Freelancer-Plattform. Erstelle ein Profil als KI-Berater." },
+        { day:"T2", time:"60 min", lang:"de",
+          task:"Beratungs-Framework entwickeln",
+          res:"Notion Consulting Templates",
+          type:"website", url:"https://www.notion.so/templates/category/consulting",
+          tip:"Lade ein Consulting-Template aus Notion und passe es an: Discovery → Analyse → Empfehlung → Umsetzung." },
+        { day:"T3", time:"60 min", lang:"de",
+          task:"Verträge & Rechtliches für Freelancer in Deutschland",
+          res:"IT-Recht Kanzlei – Freelancer Verträge",
+          type:"article", url:"https://www.it-recht-kanzlei.de/freelancer-vertrag.html",
+          tip:"Kostenlose Muster-Verträge auf Deutsch. Pflicht bevor du den ersten Auftrag annimmst." },
+        { day:"T4", time:"60 min", lang:"de",
+          task:"Steuern & Buchhaltung als KI-Freelancer",
+          res:"Lexoffice – Freelancer Buchhaltung",
+          type:"tool", url:"https://www.lexoffice.de",
+          tip:"Lexoffice ist das beste deutsche Tool für Freelancer-Buchhaltung. Von Anfang an sauber aufstellen." },
+        { day:"T5", time:"60 min", lang:"de",
+          task:"Review: Vom KI-Freelancer zur Agentur skalieren",
+          res:"Gründerszene – KI-Agenturen",
+          type:"website", url:"https://www.gruenderszene.de/technologie/kuenstliche-intelligenz",
+          tip:"Wenn die ersten Kunden kommen: Recherchiere wie deutsche KI-Agenturen skalieren und was sie anbieten." }
+      ]}
+    ]
+  },
+
+  // ── PHASE 4 ──────────────────────────────────────────────────────────────
+  {
+    id:4, title:"Agenten & Chatbots", sub:"Wochen 19–26", icon:"🤖",
+    color:"#F59E0B", accent:"rgba(77,40,0,0.6)",
+    goal:"KI-Agenten & Chatbots verstehen, selbst bauen und für Kunden einsetzen",
+    weeks:[
+      { week:"Woche 19–20", theme:"Was sind KI-Agenten? – Grundlagen", tasks:[
+        { day:"T1", time:"45 min", lang:"de",
+          task:"KI-Agent vs. Chatbot vs. LLM – was ist der Unterschied?",
+          res:"n8n Blog – KI-Agenten erklärt (Artikel)",
+          type:"article", url:"https://n8n.io/blog/what-are-ai-agents/",
+          tip:"n8n ist ein deutsches Unternehmen. Ein Agent kann selbstständig Entscheidungen treffen und Tools benutzen – das ist der entscheidende Unterschied zu einem einfachen Chatbot." },
+        { day:"T2", time:"60 min", lang:"de",
+          task:"Wie denkt ein KI-Agent? Das ReAct-Prinzip verstehen",
+          res:"IBM – Was sind KI-Agenten? (Artikel)",
+          type:"article", url:"https://www.ibm.com/de-de/think/topics/ai-agents",
+          tip:"IBM erklärt auf Deutsch das Kernprinzip: Wahrnehmen → Planen → Handeln → Lernen. Das ist das Herzstück jedes Agenten – sehr wichtig zu verstehen." },
+        { day:"T3", time:"60 min", lang:"de",
+          task:"Agenten-Tools: Websuche, Code, E-Mail, Kalender – was Agenten können",
+          res:"Heise – KI-Agenten Themendossier (Website)",
+          type:"website", url:"https://www.heise.de/thema/KI-Agenten",
+          tip:"Heise hat ein eigenes Dossier zu KI-Agenten. Lies 3–4 aktuelle Artikel um zu verstehen welche Tools Agenten einsetzen können." },
+        { day:"T4", time:"45 min", lang:"de",
+          task:"Bekannte Agenten-Frameworks: AutoGPT, CrewAI, LangGraph im Überblick",
+          res:"t3n – KI-Agenten Themenseite (Artikel)",
+          type:"article", url:"https://t3n.de/thema/ki-agenten/",
+          tip:"t3n erklärt die wichtigsten Agenten-Frameworks auf Deutsch. Als KI-Berater musst du diese Begriffe kennen und erklären können." },
+        { day:"T5", time:"60 min", lang:"de",
+          task:"Ersten Agenten live erleben – n8n AI-Agent kostenlos testen",
+          res:"n8n – AI Agent ausprobieren (Tool)",
+          type:"tool", url:"https://n8n.io/ai/",
+          tip:"n8n bietet einen kostenlosen Einstieg mit visueller Oberfläche auf Deutsch. Erstelle einen einfachen Agenten und erlebe live, wie er selbstständig Entscheidungen trifft." }
+      ]},
+      { week:"Woche 21–22", theme:"KI-Agenten richtig aufbauen", tasks:[
+        { day:"T1", time:"90 min", lang:"de",
+          task:"n8n AI-Agent Schritt für Schritt aufbauen – Deutsch Tutorial",
+          res:"n8n – AI Agents Dokumentation (Website)",
+          type:"website", url:"https://docs.n8n.io/advanced-ai/intro-tutorial/",
+          tip:"Vollständige deutsche Dokumentation. Du baust einen Agenten der Webseiten liest, Mails versendet und Entscheidungen trifft. Sehr praxisnah." },
+        { day:"T2", time:"90 min", lang:"de",
+          task:"Multi-Agenten: Mehrere Agenten zusammenarbeiten lassen",
+          res:"Flowise – Multi-Agent Tutorial (Website)",
+          type:"website", url:"https://docs.flowiseai.com/use-cases/multiple-documents-qna",
+          tip:"Ein Agent recherchiert, ein anderer schreibt, ein dritter sendet – so funktionieren Profi-Systeme. Mit Flowise visuell aufgebaut, kein Code nötig." },
+        { day:"T3", time:"60 min", lang:"de",
+          task:"Agenten-Gedächtnis: Wie speichert ein Agent Kontext dauerhaft?",
+          res:"IBM – AI Agent Memory (Artikel)",
+          type:"article", url:"https://www.ibm.com/de-de/think/topics/ai-agents",
+          tip:"Ohne Gedächtnis vergisst ein Agent nach jeder Nachricht alles. Kurz- und Langzeitgedächtnis für Agenten – entscheidend für professionelle Systeme." },
+        { day:"T4", time:"120 min", lang:"de",
+          task:"Praxis-Projekt: Agent der E-Mails liest, zusammenfasst & beantwortet",
+          res:"Make.com – AI Agent E-Mail Workflow (Tool)",
+          type:"tool", url:"https://make.com",
+          tip:"Gmail empfängt E-Mail → Claude analysiert Inhalt → Agent entscheidet ob automatische Antwort → sendet oder leitet weiter. Echter Business-Use-Case – Kunden lieben das." },
+        { day:"T5", time:"90 min", lang:"de",
+          task:"Social-Media-Agent: Posts planen, schreiben & veröffentlichen",
+          res:"n8n – Workflow Templates (Tool)",
+          type:"tool", url:"https://n8n.io/workflows/",
+          tip:"Suche in den n8n-Templates nach 'social media' oder 'content'. Fertige Agenten die du direkt kopieren und anpassen kannst. Enorme Zeitersparnis." }
+      ]},
+      { week:"Woche 23–24", theme:"Apps mit KI erstellen – No-Code bis Low-Code", tasks:[
+        { day:"T1", time:"60 min", lang:"de",
+          task:"Welche KI-App-Builder gibt es? Überblick No-Code Tools",
+          res:"t3n – No-Code Tools im Vergleich (Artikel)",
+          type:"article", url:"https://t3n.de/news/no-code-tools-1587210/",
+          tip:"t3n gibt einen hervorragenden deutschsprachigen Überblick über No-Code-Tools und welche davon KI-Funktionen haben. Perfekte Orientierung." },
+        { day:"T2", time:"90 min", lang:"de",
+          task:"Bolt.new – Komplette App per Texteingabe in Minuten erstellen",
+          res:"Bolt.new – KI App-Builder (Tool)",
+          type:"tool", url:"https://bolt.new",
+          tip:"Der schnellste Weg zur eigenen App: Beschreibe auf Deutsch was die App tun soll, Bolt generiert vollständigen Code + UI in Sekunden. Kostenlos starten." },
+        { day:"T3", time:"90 min", lang:"de",
+          task:"Bubble.io – Professionelle Web-App mit KI-Integration bauen",
+          res:"Bubble.io – No-Code App Builder (Tool)",
+          type:"tool", url:"https://bubble.io",
+          tip:"Mächtigster No-Code App-Builder weltweit. Baue eine vollständige Web-App mit Login, Datenbank und GPT-Integration – ohne eine Zeile Code." },
+        { day:"T4", time:"60 min", lang:"de",
+          task:"Streamlit – KI-App mit Python in 30 Minuten deployen",
+          res:"Streamlit – Quickstart (Website)",
+          type:"website", url:"https://docs.streamlit.io/get-started",
+          tip:"Streamlit ist ideal für KI-Dashboards. Erstelle eine App die Claude oder GPT aufruft und Ergebnisse schön anzeigt – perfektes Portfolio-Stück." },
+        { day:"T5", time:"120 min", lang:"de",
+          task:"Deine erste KI-App live: Von Idee bis zum öffentlichen Link",
+          res:"Netlify – Kostenloses App-Hosting (Tool)",
+          type:"tool", url:"https://netlify.com",
+          tip:"Kombiniere alles: Baue eine Mini-KI-App (z.B. Angebots-Generator) und stelle sie kostenlos mit Netlify online. Dein stärkstes Portfolio-Stück." }
+      ]},
+      { week:"Woche 25–26", theme:"KI-Chatbots für Kunden – von A bis Z", tasks:[
+        { day:"T1", time:"60 min", lang:"de",
+          task:"Chatbot-Typen: FAQ, Support, Lead-Gen, Verkauf – Unterschiede",
+          res:"Userlike – Chatbot-Typen Deutsch (Artikel)",
+          type:"article", url:"https://www.userlike.com/de/blog/chatbot-typen",
+          tip:"Userlike ist ein deutsches Unternehmen mit dem besten deutschsprachigen Chatbot-Blog. Alle Typen mit echten Business-Beispielen erklärt." },
+        { day:"T2", time:"90 min", lang:"de",
+          task:"RAG-Chatbot mit eigener Wissensbasis bauen (Firmen-FAQ, PDFs)",
+          res:"Flowise – Chatbot mit eigenen Daten (Website)",
+          type:"website", url:"https://docs.flowiseai.com/use-cases/multiple-documents-qna",
+          tip:"Baue einen Chatbot, der eine Firmen-Website, PDFs oder FAQ-Dokumente kennt. Mit Flowise dauert das 30–60 Minuten und du brauchst keinen Code." },
+        { day:"T3", time:"90 min", lang:"de",
+          task:"Chatbot auf eine Website einbinden – ein Skript, fertig",
+          res:"Crisp – DSGVO-konformer Website-Chatbot (Tool)",
+          type:"tool", url:"https://crisp.chat/de/",
+          tip:"Crisp ist europäisch und DSGVO-konform. Chatbot per einem Skript-Tag einbinden – auch für Kunden ohne technische Kenntnisse erklärbar." },
+        { day:"T4", time:"90 min", lang:"de",
+          task:"WhatsApp-Bot: Kundenanfragen automatisch auf WhatsApp beantworten",
+          res:"Make.com – WhatsApp + KI Workflow (Tool)",
+          type:"tool", url:"https://make.com",
+          tip:"Kunde schreibt auf WhatsApp → KI liest Anfrage → prüft FAQ-Datenbank → schickt automatische Antwort. Sehr gefragt bei KMU-Kunden in Deutschland." },
+        { day:"T5", time:"120 min", lang:"de",
+          task:"Abschluss-Projekt: Vollständiger Kunden-Chatbot + Präsentation",
+          res:"Botpress – Professioneller Chatbot-Builder (Tool)",
+          type:"tool", url:"https://botpress.com",
+          tip:"Botpress ist einer der besten kostenlosen Chatbot-Builder für professionelle Anwendungen. Baue einen kompletten Support-Bot und erstelle eine Präsentation für deinen ersten Kundenpitch." }
+      ]}
+    ]
+  }
+];
+
+const typeConf = {
+  youtube: { badge:"▶ YouTube", color:"#FF4444", bg:"rgba(255,68,68,0.12)", icon:"🎬" },
+  website: { badge:"🌐 Website", color:"#00D4FF", bg:"rgba(0,212,255,0.12)", icon:"🌐" },
+  article: { badge:"📄 Artikel", color:"#22C55E", bg:"rgba(34,197,94,0.12)", icon:"📄" },
+  tool:    { badge:"🛠 Tool",    color:"#FFB347", bg:"rgba(255,179,71,0.12)", icon:"🛠" },
+};
+const langConf = {
+  de: { label:"🇩🇪 Deutsch",  color:"#2A6F2A", bg:"rgba(42,111,42,0.2)" },
+  en: { label:"🇬🇧 Englisch", color:"#3a5a9b", bg:"rgba(58,90,155,0.2)" },
+};
+
+// ─────────────────────────────────────────────
+// STATE  (persisted in localStorage)
+// ─────────────────────────────────────────────
+let state = {
+  tab: "plan",
+  phaseIdx: 0,
+  weekIdx: 0,
+  checked: {},   // key → true
+  openKey: null,
+};
+
+function save() { try { localStorage.setItem("ki_state", JSON.stringify(state)); } catch(e){} }
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem("ki_state")||"{}");
+    if (s.checked) state.checked = s.checked;
+    if (typeof s.phaseIdx === "number") state.phaseIdx = s.phaseIdx;
+    if (typeof s.weekIdx  === "number") state.weekIdx  = s.weekIdx;
+    if (typeof s.tab === "string")      state.tab       = s.tab;
+  } catch(e){}
+}
+
+// ─────────────────────────────────────────────
+// PROGRESS
+// ─────────────────────────────────────────────
+function totalTasks() { return phases.reduce((s,p) => s + p.weeks.reduce((ss,w) => ss + w.tasks.length, 0), 0); }
+function doneTasks()  { return Object.values(state.checked).filter(Boolean).length; }
+function updateProgress() {
+  const total = totalTasks(), done = doneTasks();
+  const pct = total ? Math.round(done/total*100) : 0;
+  document.getElementById("prog-fill").style.width = pct+"%";
+  document.getElementById("prog-tasks").textContent = done+"/"+total+" Aufgaben";
+  document.getElementById("progress-pct").textContent = pct+"%";
+}
+
+// ─────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────
+function taskKey(phI, wkI, tI) { return `${phI}-${wkI}-${tI}`; }
+
+function renderPlan() {
+  const ph = phases[state.phaseIdx];
+  const wk = ph.weeks[state.weekIdx];
+
+  let html = "";
+
+  // Phase pills
+  html += '<div class="phase-grid">';
+  phases.forEach((p, i) => {
+    const act = i === state.phaseIdx;
+    html += `<button class="phase-pill${act?" active":""}" style="--pill-color:${p.color};--pill-accent:${p.accent};${act?"border-color:"+p.color+";":""}" onclick="selectPhase(${i})">
+      <div class="pill-icon">${p.icon}</div>
+      <div class="pill-title">Phase ${p.id}: ${p.title}</div>
+      <div class="pill-sub">${p.sub}</div>
+    </button>`;
+  });
+  html += "</div>";
+
+  // Goal banner
+  html += `<div class="goal-banner" style="border-color:${ph.color}33;border-left-color:${ph.color};background:${ph.accent};">
+    <div class="goal-label" style="color:${ph.color};font-size:9px;letter-spacing:3px;">PHASENZIEL</div>
+    <div class="goal-text">${ph.goal}</div>
+  </div>`;
+
+  // Week tabs
+  html += '<div class="week-tabs">';
+  ph.weeks.forEach((w, i) => {
+    const act = i === state.weekIdx;
+    html += `<button class="week-tab${act?" active":""}" style="${act?`background:${ph.color};color:#000;border-color:${ph.color};`:""}" onclick="selectWeek(${i})">${w.week}</button>`;
+  });
+  html += "</div>";
+
+  html += `<div class="week-theme">${wk.theme}</div>`;
+
+  // Tasks
+  html += '<div class="task-list">';
+  wk.tasks.forEach((t, i) => {
+    const key   = taskKey(state.phaseIdx, state.weekIdx, i);
+    const done  = !!state.checked[key];
+    const isOpen = state.openKey === key;
+    const tc    = typeConf[t.type];
+    const lc    = langConf[t.lang] || langConf.de;
+
+    html += `<div class="task-card${done?" done":""}${isOpen?" open":""}" style="${isOpen?"border-color:"+ph.color+"66;":""}">
+      <div class="task-row">
+        <button class="check-btn${done?" checked":""}" style="${done?`background:${ph.color};border-color:${ph.color};`:""}" onclick="toggleCheck('${key}')">${done?"✓":t.day}</button>
+        <div class="task-info">
+          <div class="task-text">${t.task}</div>
+          <div class="task-badges">
+            <span class="badge badge-time">⏱ ${t.time}</span>
+            <span class="badge badge-type" style="color:${tc.color};background:${tc.bg};border-color:${tc.color}33;">${tc.badge}</span>
+            <span class="badge-lang" style="color:${lc.color};background:${lc.bg};">${lc.label}</span>
+          </div>
+        </div>
+        <button class="open-btn" style="color:${isOpen?"#000":ph.color};background:${isOpen?ph.color:"transparent"};border-color:${ph.color}${isOpen?"":"55"};" onclick="toggleOpen('${key}')">${isOpen?"✕":""+tc.icon+" Öffnen"}</button>
+      </div>`;
+
+    if (isOpen) {
+      html += `<div class="res-panel" style="border-top-color:${ph.color}33;">
+        <div class="res-bar">
+          <span class="res-name">${tc.icon} ${t.res}</span>
+          <a class="res-open" href="${t.url}" target="_blank" style="background:${tc.color};color:#000;">↗ Öffnen</a>
+        </div>
+        <div class="res-tip">💡 ${t.tip}</div>`;
+
+      if (t.type === "youtube" && t.id) {
+        html += `<div style="padding:12px;position:relative;padding-bottom:calc(56.25% + 12px);">
+          <iframe src="https://www.youtube.com/embed/${t.id}?rel=0&modestbranding=1" frameborder="0" allow="accelerometer;autoplay;clipboard-write;encrypted-media;gyroscope;picture-in-picture" allowfullscreen style="position:absolute;top:12px;left:12px;width:calc(100% - 24px);height:calc(56.25% + 0px);border-radius:8px;border:1px solid ${ph.color}44;"></iframe>
+        </div>`;
+      } else {
+        html += `<div class="web-wrap">
+          <div class="fake-browser">
+            <div class="browser-bar">
+              <div class="browser-dot" style="background:#FF5F57;"></div>
+              <div class="browser-dot" style="background:#FFBD2E;"></div>
+              <div class="browser-dot" style="background:#28C840;"></div>
+              <div class="browser-url">${t.url}</div>
+            </div>
+            <iframe src="${t.url}" class="web-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
+          </div>
+        </div>`;
+      }
+      html += "</div>";
+    }
+
+    html += "</div>";
+  });
+  html += "</div>";
+  return html;
+}
+
+function renderInfo() {
+  const sections = [
+    { color:"#00D4FF", title:"▶ Ressourcen direkt öffnen", items:[
+      "Tippe auf '🎬 Öffnen' – YouTube-Videos spielen direkt in der App.",
+      "Websites und Artikel öffnen sich im eingebetteten Browser darunter.",
+      "Mit '↗ Öffnen' oben rechts im Panel öffnest du die Seite im Safari-Browser.",
+      "Tippe auf den Tag-Button (Mo/Di/T1...) um eine Aufgabe als erledigt zu markieren.",
+    ]},
+    { color:"#00D4FF", title:"🇩🇪 Warum primär Deutsch?", items:[
+      "95% der Ressourcen sind auf Deutsch – du lernst ohne Sprachbarriere.",
+      "Quellen: IBM Deutschland, Heise Online, t3n, TH Köln, Bundesregierung, OMR.",
+      "Deutsches Wissen (DSGVO, EU AI Act, Preise) ist Gold wert für KI-Beratung.",
+      "Englische Ressourcen sind klar mit 🇬🇧 markiert.",
+    ]},
+    { color:"#A855F7", title:"📅 Empfohlene Tagesroutine", items:[
+      "10 Min: KI-Briefing Newsletter lesen (ki-briefing.de) oder Heise KI",
+      "30–60 Min: Aufgabe aus dem Plan – Ressource öffnen und aktiv mitmachen",
+      "20 Min: Das Gelernte selbst ausprobieren – Prompt testen, Tool öffnen",
+      "10 Min: Learnings in Notion festhalten (Glossar + Prompt-Bibliothek)",
+    ]},
+    { color:"#FF6B35", title:"💰 Budget-Empfehlung", items:[
+      "Monat 1–2: Komplett kostenlos – alle Tools haben Free Tiers",
+      "Monat 3: Claude Pro ODER ChatGPT Plus (~20€/Mo) – nicht beides",
+      "Monat 4+: Make.com Starter (~10€) für Automatisierungen",
+      "Als Berater: Tools aktiv selbst nutzen = Glaubwürdigkeit bei Kunden",
+    ]},
+    { color:"#22C55E", title:"🎯 Mögliche Geschäftsfelder", items:[
+      "KI-Beratung für KMU – Tagessatz 800–1.500€ bei 1–2 Jahren Erfahrung",
+      "KI-Automatisierungen (Make.com, n8n) – Projektpreise 2.000–10.000€",
+      "Chatbots und RAG-Systeme für Firmen entwickeln",
+      "KI-Workshops und Schulungen (500–1.500€/Tag)",
+      "Content-Agentur mit KI für deutsche Unternehmen",
+    ]},
+  ];
+
+  return sections.map(s => `
+    <div class="info-section" style="border-color:${s.color}22;border-left-color:${s.color};background:rgba(0,0,0,0.2);">
+      <div class="info-title" style="color:${s.color};">${s.title}</div>
+      ${s.items.map(it => `<div class="info-item"><span class="info-arrow" style="color:${s.color};">→</span><span class="info-text">${it}</span></div>`).join("")}
+    </div>`).join("");
+}
+
+function render() {
+  const scroll = document.getElementById("scroll");
+  scroll.innerHTML = state.tab === "plan" ? renderPlan() : renderInfo();
+  updateProgress();
+}
+
+// ─────────────────────────────────────────────
+// ACTIONS
+// ─────────────────────────────────────────────
+function switchTab(tab) {
+  state.tab = tab;
+  document.querySelectorAll(".nav-btn").forEach(b => b.classList.toggle("active", b.dataset.tab === tab));
+  render(); save();
+}
+function selectPhase(i) { state.phaseIdx = i; state.weekIdx = 0; state.openKey = null; render(); save(); }
+function selectWeek(i)  { state.weekIdx = i; state.openKey = null; render(); save(); }
+function toggleCheck(key) {
+  state.checked[key] = !state.checked[key];
+  if (!state.checked[key]) delete state.checked[key];
+  render(); save();
+}
+function toggleOpen(key) {
+  state.openKey = state.openKey === key ? null : key;
+  render(); save();
+  // scroll to opened card after a tick
+  if (state.openKey) setTimeout(() => {
+    const cards = document.querySelectorAll(".task-card.open");
+    if (cards.length) cards[0].scrollIntoView({behavior:"smooth", block:"start"});
+  }, 80);
+}
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+load();
+render();
+
+// Service Worker registrieren (für Offline)
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>
